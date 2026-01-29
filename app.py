@@ -52,19 +52,156 @@ def get_star_rating(rating, size=24, max_stars=5):
     return star_svg
 
 
-# Moon rating
+# Moon rating (SVG version)
 
+def get_moon_phase_type(percentage):
+    """Determine moon phase based on fill percentage."""
+    if percentage <= 0.1:
+        return "new"       # 🌑 Empty
+    elif percentage <= 0.3:
+        return "crescent"  # 🌘 Waning crescent (~25%)
+    elif percentage <= 0.6:
+        return "half"      # 🌗 Half moon (50%)
+    elif percentage <= 0.9:
+        return "gibbous"   # 🌖 Waxing gibbous (~75%)
+    else:
+        return "full"      # 🌕 Full moon (100%)
+
+
+def get_moon_rating_svg(rating, size=24, max_moons=5):
+    """Get the moon rating as SVG representation.
+
+    Args:
+        rating (float): The rating value between 0 and max_moons.
+        size (int): The size of each moon in pixels.
+        max_moons (int): The maximum number of moons.
+
+    Returns:
+        str: An SVG representation of the moon rating.
+    """
+    rating = max(0, min(max_moons, rating))
+
+    # Colors
+    fill_color = "#F4D03F"  # Golden yellow for filled moons
+    empty_color = "#ddd"    # Gray for empty moons
+
+    moon_svg = f'''<svg xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 {max_moons * 100} 100"
+        width="{size * max_moons}"
+        height="{size}">
+        <defs>'''
+
+    # Create clip paths for each moon position
+    for i in range(max_moons):
+        moon_value = max(0, min(1, rating - i))
+        phase = get_moon_phase_type(moon_value)
+
+        # Calculate clip width based on phase
+        if phase == "new":
+            clip_width = 0
+        elif phase == "crescent":
+            clip_width = 25
+        elif phase == "half":
+            clip_width = 50
+        elif phase == "gibbous":
+            clip_width = 75
+        else:  # full
+            clip_width = 100
+
+        moon_svg += f'''
+            <clipPath id="moon-clip-{i}">
+                <rect x="0" y="0" width="{clip_width}" height="100" />
+            </clipPath>'''
+
+    moon_svg += '''
+        </defs>'''
+
+    # Draw moons
+    for i in range(max_moons):
+        x = i * 100
+        moon_value = max(0, min(1, rating - i))
+        phase = get_moon_phase_type(moon_value)
+
+        # Background (empty) moon
+        moon_svg += f'''
+            <circle cx="{x + 50}" cy="50" r="40" fill="{empty_color}"/>'''
+
+        # Filled portion (if any)
+        if phase != "new":
+            moon_svg += f'''
+            <circle cx="{x + 50}" cy="50" r="40" fill="{fill_color}"
+                    clip-path="url(#moon-clip-{i})"
+                    transform="translate({x}, 0)" style="transform-origin: {x}px 0"/>'''
+            # Fix: use a group with transform for proper clipping
+
+    moon_svg += '''
+    </svg>'''
+
+    return moon_svg
+
+
+def get_moon_rating_svg_v2(rating, size=24, max_moons=5):
+    """Improved SVG moon rating with proper clipping.
+
+    Args:
+        rating (float): The rating value between 0 and max_moons.
+        size (int): The size of each moon in pixels.
+        max_moons (int): The maximum number of moons.
+
+    Returns:
+        str: An SVG representation of the moon rating.
+    """
+    rating = max(0, min(max_moons, rating))
+
+    fill_color = "#F4D03F"  # Golden yellow
+    empty_color = "#ddd"    # Gray
+
+    moon_svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {max_moons * 100} 100" width="{size * max_moons}" height="{size}">'''
+
+    for i in range(max_moons):
+        x = i * 100 + 50  # Center of each moon cell
+        moon_value = max(0, min(1, rating - i))
+        phase = get_moon_phase_type(moon_value)
+
+        # Calculate fill percentage
+        if phase == "new":
+            fill_pct = 0
+        elif phase == "crescent":
+            fill_pct = 0.25
+        elif phase == "half":
+            fill_pct = 0.5
+        elif phase == "gibbous":
+            fill_pct = 0.75
+        else:
+            fill_pct = 1.0
+
+        # Background circle (empty moon)
+        moon_svg += f'<circle cx="{x}" cy="50" r="40" fill="{empty_color}"/>'
+
+        # Filled portion using clip rect
+        if fill_pct > 0:
+            clip_id = f"clip{i}"
+            clip_x = i * 100
+            clip_width = fill_pct * 100
+            moon_svg += f'''<defs><clipPath id="{clip_id}"><rect x="{clip_x}" y="0" width="{clip_width}" height="100"/></clipPath></defs>'''
+            moon_svg += f'<circle cx="{x}" cy="50" r="40" fill="{fill_color}" clip-path="url(#{clip_id})"/>'
+
+    moon_svg += '</svg>'
+    return moon_svg
+
+
+# Legacy emoji version (kept for backwards compatibility via /moon-emoji/ route)
 def get_moon_phase(percentage):
     if percentage <= 0.1:
-        return "🌑"  # Empty
+        return "🌑"
     elif percentage <= 0.3:
-        return "🌘"  # Waning crescent
+        return "🌘"
     elif percentage <= 0.6:
-        return "🌗"  # Half
+        return "🌗"
     elif percentage <= 0.9:
-        return "🌖"  # Waxing gibbous
+        return "🌖"
     else:
-        return "🌕"  # Full
+        return "🌕"
 
 def get_moon_rating(rating):
     rating = max(min(5, rating), 0)
@@ -93,12 +230,30 @@ def star_rating(rating):
     return response
 
 @app.route('/moon/<rating>/')
-def moon_rating(rating):
+def moon_rating_route(rating):
+    """Moon rating as SVG image (works in Markdown ![](url))."""
     try:
         rating = float(rating)
     except ValueError:
         return "Invalid rating value", 400
-    
+
+    size = request.args.get('size', default=24, type=int)
+    max_moons = request.args.get('max', default=5, type=int)
+
+    svg = get_moon_rating_svg_v2(rating, size, max_moons)
+    response = make_response(svg)
+    response.headers['Content-Type'] = 'image/svg+xml'
+    return response
+
+
+@app.route('/moon-emoji/<rating>/')
+def moon_rating_emoji(rating):
+    """Legacy: Moon rating as text emojis."""
+    try:
+        rating = float(rating)
+    except ValueError:
+        return "Invalid rating value", 400
+
     moon_rating_output = get_moon_rating(rating)
     response = make_response(moon_rating_output)
     response.headers['Content-Type'] = 'text/plain; charset=utf-8'
